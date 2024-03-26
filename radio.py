@@ -1,82 +1,61 @@
-
-# Simple example to send a message and then wait indefinitely for messages
-# to be received.  This uses the default RadioHead compatible GFSK_Rb250_Fd250
-# modulation and packet format for the radio.
+import time
 import board
 import busio
 import digitalio
-
 import adafruit_rfm69
-
+import adafruit_adxl34x
+import adafruit_bmp280
 
 # Define radio parameters.
-RADIO_FREQ_MHZ = 915.0  # Frequency of the radio in Mhz. Must match your
-# module! Can be a value like 915.0, 433.0, etc.
-
-# Define pins connected to the chip, use these if wiring up the breakout according to the guide:
+RADIO_FREQ_MHZ = 915.0  # Frequency of the radio in Mhz. Must match your module!
 CS = digitalio.DigitalInOut(board.D5)
 RESET = digitalio.DigitalInOut(board.D6)
-# Or uncomment and instead use these if using a Feather M0 RFM69 board
-# and the appropriate CircuitPython build:
-# CS = digitalio.DigitalInOut(board.RFM69_CS)
-# RESET = digitalio.DigitalInOut(board.RFM69_RST)
-
-# Define the onboard LED
-LED = digitalio.DigitalInOut(board.D13)
-LED.direction = digitalio.Direction.OUTPUT
-
-# Initialize SPI bus.
 spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
-
-# Initialze RFM radio
 rfm69 = adafruit_rfm69.RFM69(spi, CS, RESET, RADIO_FREQ_MHZ)
 
-# Optionally set an encryption key (16 byte AES key). MUST match both
-# on the transmitter and receiver (or be set to None to disable/the default).
+# Initialize the BMP280 sensor
+i2c = busio.I2C(board.SCL, board.SDA)
+bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c)
+
+# Initialize the ADXL345 accelerometer
+accelerometer = adafruit_adxl34x.ADXL345(i2c)
+
+# Optionally set an encryption key (16 byte AES key).
 rfm69.encryption_key = (
     b"\x01\x02\x03\x04\x05\x06\x07\x08\x01\x02\x03\x04\x05\x06\x07\x08"
 )
 
-# Print out some chip state:
-print("Temperature: {0}C".format(rfm69.temperature))
-print("Frequency: {0}mhz".format(rfm69.frequency_mhz))
-print("Bit rate: {0}kbit/s".format(rfm69.bitrate / 1000))
-print("Frequency deviation: {0}hz".format(rfm69.frequency_deviation))
-
-
-rfm69.send(bytes("Hello world!\r\n", "utf-8"))
-print("Sent hello world message!")
-
-
-print("Waiting for packets...")
+# Main loop
 while True:
-    packet = rfm69.receive(0.5)
-    # Optionally change the receive timeout from its default of 0.5 seconds:
-    # packet = rfm69.receive(timeout=5.0)
-    # If no packet was received during the timeout then None is returned.
-    if packet is None:
-        # Packet has not been received
-        LED.value = False
-        print("Received nothing! Listening again...")
-    else:
-        # Received a packet!
-        LED.value = True
-        # Print out the raw bytes of the packet:
-        print("Received (raw bytes): {0}".format(packet))
-        
-        packet_text = str(packet, "ascii")
-        print("Received (ASCII): {0}".format(packet_text))
+    # Read altitude and pressure from BMP280 sensor
+    altitude = bmp280.altitude
+    pressure = bmp280.pressure
 
+    # Read acceleration from ADXL345 accelerometer
+    acceleration = accelerometer.acceleration
 
-baseline = 1000.0 # day's pressure at sea level
-bmp = BME280( i2c=i2c, address=BMP280_I2CADDR )
-while True:
-    # returns a tuple with (temperature, pressure_hPa, humidity)
-    p = bmp.raw_values[1]
-    altitude = (baseline - p)*8.3
-    print( "Altitude: %f m" % altitude )
-    sleep(1)
+    # Calculate velocity using the trapezoidal rule
+    velocity_x = acceleration[0] * 9.80665  # Convert from g to m/s^2
+    velocity_y = acceleration[1] * 9.80665
+    velocity_z = acceleration[2] * 9.80665
 
-while True:
-    if altitude 
+    # Prepare data to send
+    data = bytearray()
+    data.extend(bytearray(struct.pack("<f", altitude)))  # Pack altitude as float
+    data.extend(bytearray(struct.pack("<f", pressure)))  # Pack pressure as float
+    data.extend(bytearray(struct.pack("<f", velocity_x)))  # Pack velocity_x as float
+    data.extend(bytearray(struct.pack("<f", velocity_y)))  # Pack velocity_y as float
+    data.extend(bytearray(struct.pack("<f", velocity_z)))  # Pack velocity_z as float
 
+    # Send data over RFM69 radio
+    rfm69.send(data)
+
+    # Print transmitted data for debugging
+    print("Altitude:", altitude, "m")
+    print("Pressure:", pressure, "hPa")
+    print("Velocity X:", velocity_x, "m/s")
+    print("Velocity Y:", velocity_y, "m/s")
+    print("Velocity Z:", velocity_z, "m/s")
+
+    # Wait for a short interval before sending the next data
+    time.sleep(1)
