@@ -24,18 +24,27 @@ bmp280 = adafruit_bmp280.Adafruit_BMP280_I2C(i2c, 0x76)
 bmp280.sea_level_pressure = 1013.25
 
 alt_counter = 0
-altmax = bmp280.altitude
+altprev = bmp280.altitude
 
 writedata = False
+timeprev = time.monotonic()
+
+with open("data.txt", "a") as fp:
+    fp.write(f"Measurement start \n")
 
 while True:
     buzzer.buzzer_tick()
     states.tick()
+
+
     altitude = bmp280.altitude
     pressure = bmp280.pressure
     acceleration = accelerometer.acceleration
     # print(f"Acceleration: {acceleration} \n")
     # print(f"Pressure: {pressure}, Altitude: {altitude} \n")
+
+    # with open("data.txt", "a") as fp:
+    #     fp.write(f"Acceleration: {acceleration} \n")
 
 
     # print(time.time())
@@ -43,22 +52,36 @@ while True:
     if(states.state == statemachine.States.LAUNCHED_MODE):
         writedata = True
 
-        if altitude <= altmax:
-            alt_counter += 1
-        else:
-            alt_counter = 0
-        altmax = altitude
+        timenow = time.monotonic()
+        if timenow - timeprev > 0.3:
+            timeprev = timenow
+            altitude = bmp280.altitude
+            pressure = bmp280.pressure
+            acceleration = accelerometer.acceleration
+
+            if altitude <= altprev:
+                alt_counter += 1
+            else:
+                alt_counter = 0
+            altprev = altitude
+
+            with open("data.txt", "a") as fp:
+                fp.write(f"{acceleration} {pressure} {altitude} \n")
+                # fp.write(f"Pressure: {pressure}, Altitude: {altitude} \n")
+                # fp.write(str(time.time()))
 
         if alt_counter == 3:
-            external.PYRO_DETONATE()
-       
-            # print(accelerometer.acceleration)
-            # print(bmp280.pressure)
-            # print(bmp280.altitude)
-        time.sleep(1)
+            external.PYRO_DETONATE() # TODO: is this accounted for by line below?
+            states.state == statemachine.States.DEPLOYED_MODE
+    
+    if(states.state == statemachine.States.DEPLOYED_MODE):
+        timenow = time.monotonic()
+        if timenow - timeprev > 0.3:
+            timeprev = timenow
+            altitude = bmp280.altitude
+            pressure = bmp280.pressure
+            acceleration = accelerometer.acceleration
 
-    if writedata:
-        with open("data.txt", "w") as fp:
-            fp.write(f"Acceleration: {acceleration} \n")
-            fp.write(f"Pressure: {pressure}, Altitude: {altitude} \n")
-            # fp.write(str(time.time_ns()))
+            with open("data.txt", "a") as fp:
+                fp.write(f"{acceleration} {pressure} {altitude} \n")
+                # fp.write(f"Pressure: {pressure}, Altitude: {altitude} \n")
